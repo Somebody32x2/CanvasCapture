@@ -1,3 +1,5 @@
 ## Setup
-pip install intelliscraper-core
-playwright install chromium
+pip install -U camoufox
+pip install dotenv
+camoufox fetch
+(python -m camoufox fetch on linux)
