@@ -1,5 +1,15 @@
+import logging
+from pathlib import Path
 from dateutil import parser as dateutil_parser
 from dateutil.parser import ParserError
+
+# Log parsing errors to errors.log next to this file
+_log = logging.getLogger("parse_assignments")
+if not _log.handlers:
+    _handler = logging.FileHandler(Path(__file__).parent / "errors.log", encoding="utf-8")
+    _handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+    _log.addHandler(_handler)
+    _log.setLevel(logging.ERROR)
 
 
 def parse_canvas_date(raw: str | None, field: str) -> str | None:
@@ -23,7 +33,9 @@ def parse_score(row) -> dict:
     if not score_el:
         return {"score": None, "max_points": None}
     text = score_el.inner_text().strip()
-    # Formats: "100/100 pts", "-/10 pts", "50/100 pts"
+    # Formats: "100/100 pts", "-/10 pts", "50/100 pts", "-/10 pts | Not Yet Graded"
+    # Strip any grade-display suffix (e.g. "| Not Yet Graded")
+    text = text.split("|")[0].strip()
     parts = text.replace(" pts", "").split("/")
     if len(parts) == 2:
         raw_score, raw_max = parts[0].strip(), parts[1].strip()
@@ -36,54 +48,67 @@ def parse_score(row) -> dict:
     return {"score": None, "max_points": None}
 
 
-def parse_assignment_row(row) -> dict:
+def parse_assignment_row(row) -> dict | None:
+    """Parse a single assignment row. Returns None and logs on error."""
     assignment_id = row.get_attribute("data-item-id")
+    try:
+        # Title
+        title_el = row.query_selector(".ig-title")
+        title = title_el.inner_text().strip() if title_el else None
 
-    # Title
-    title_el = row.query_selector(".ig-title")
-    title = title_el.inner_text().strip() if title_el else None
+        # Due date - prefer the tooltip attribute, fall back to inner text
+        due_el = row.query_selector(".assignment-date-due [data-html-tooltip-title]")
+        if due_el:
+            due_raw = due_el.get_attribute("data-html-tooltip-title")
+        else:
+            due_span = row.query_selector(".assignment-date-due span:not(.screenreader-only)")
+            due_raw = due_span.inner_text().strip() if due_span else None
+        due_date = parse_canvas_date(due_raw, "due")
 
-    # Due date - prefer the tooltip attribute, fall back to inner text
-    due_el = row.query_selector(".assignment-date-due [data-html-tooltip-title]")
-    if due_el:
-        due_raw = due_el.get_attribute("data-html-tooltip-title")
-    else:
-        due_span = row.query_selector(".assignment-date-due span:not(.screenreader-only)")
-        due_raw = due_span.inner_text().strip() if due_span else None
-    due_date = parse_canvas_date(due_raw, "due")
+        # Open/close date derived from "Not available until" / "Available until" / "Closed"
+        avail_el = row.query_selector(".assignment-date-available [data-html-tooltip-title]")
+        if avail_el:
+            avail_raw = avail_el.get_attribute("data-html-tooltip-title")
+        else:
+            avail_span = row.query_selector(".assignment-date-available span:not(.screenreader-only):not(.status-description)")
+            avail_raw = avail_span.inner_text().strip() if avail_span else None
 
-    # Open/close date derived from "Not available until" / "Available until"
-    avail_el = row.query_selector(".assignment-date-available [data-html-tooltip-title]")
-    if avail_el:
-        avail_raw = avail_el.get_attribute("data-html-tooltip-title")
-    else:
-        avail_span = row.query_selector(".assignment-date-available span:not(.screenreader-only):not(.status-description)")
-        avail_raw = avail_span.inner_text().strip() if avail_span else None
+        status_el = row.query_selector(".assignment-date-available .status-description")
+        avail_label = status_el.inner_text().strip().lower() if status_el else None
 
-    status_el = row.query_selector(".assignment-date-available .status-description")
-    avail_label = status_el.inner_text().strip().lower() if status_el else None
+        # "Closed" means the close date has passed - no date is shown
+        if avail_label == "closed":
+            open_date = None
+            close_date = None
+            closed = True
+        else:
+            avail_date = parse_canvas_date(avail_raw, "available")
+            closed = False
+            if avail_label == "not available until":
+                open_date = avail_date
+                close_date = None
+            elif avail_label == "available until":
+                open_date = None
+                close_date = avail_date
+            else:
+                open_date = None
+                close_date = None
 
-    avail_date = parse_canvas_date(avail_raw, "available")
+        score_info = parse_score(row)
 
-    if avail_label == "not available until":
-        open_date = avail_date
-        close_date = None
-    elif avail_label == "available until":
-        open_date = None
-        close_date = avail_date
-    else:
-        open_date = None
-        close_date = None
+        return {
+            "id": assignment_id,
+            "title": title,
+            "due_date": due_date,
+            "open_date": open_date,
+            "close_date": close_date,
+            "closed": closed,
+            "score": score_info["score"],
+            "max_points": score_info["max_points"],
+        }
 
-    score_info = parse_score(row)
-
-    return {
-        "id": assignment_id,
-        "title": title,
-        "due_date": due_date,
-        "open_date": open_date,
-        "close_date": close_date,
-        "score": score_info["score"],
-        "max_points": score_info["max_points"],
-    }
-
+    except Exception as e:
+        msg = f"Failed to parse assignment id={assignment_id!r}: {e}"
+        print(msg)
+        _log.error(msg, exc_info=True)
+        return None

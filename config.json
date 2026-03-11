@@ -1,0 +1,31 @@
+{
+  "check_interval_minutes": 30,
+  "headless": true,
+  "night_mode": {
+    "enabled": true,
+    "start_hour": 23,
+    "end_hour": 7,
+    "check_interval_minutes": 180
+  },
+  "notifications": {
+    "assignments": {
+      "new_assignment": true,
+      "assignment_removed": true,
+      "title_changed": false,
+      "score_added": true,
+      "score_changed": true,
+      "max_points_changed": false,
+      "due_date_added": true,
+      "due_date_changed": true,
+      "due_date_removed": true,
+      "open_date_added": false,
+      "open_date_changed": false,
+      "open_date_removed": false,
+      "close_date_added": false,
+      "close_date_changed": false,
+      "close_date_removed": false,
+      "assignment_opened": true,
+      "assignment_closed": true
+    }
+  }
+}

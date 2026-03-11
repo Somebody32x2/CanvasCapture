@@ -17,4 +17,3 @@ def sign_in(username, password, url, browser):
     else:
         print("Already logged in")
     return page
-    # time.sleep(100)

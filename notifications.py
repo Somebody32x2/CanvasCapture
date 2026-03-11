@@ -3,67 +3,167 @@ Notification event keys and human-readable labels for assignment changes.
 Each entry maps a machine-readable key to a label template.
 Placeholders are fully qualified assignment prop names prefixed with old_ or new_,
 e.g. {old_title}, {new_title}, {old_score}, {new_due_date}, etc.
-e.g. {old_title}, {new_title}, {old_score}, {new_due_date}, etc.
 """
 
-# --- Event keys ---
+LABELS: dict[str, dict[str, str]] = {
+        "assignments": {
+            "new_assignment": "New assignment: {new_title}",
+            "assignment_removed": "Assignment removed: {old_title}",
 
-NEW_ASSIGNMENT = "new_assignment"
-ASSIGNMENT_REMOVED = "assignment_removed"
+            "title_changed": '"{old_title}" was renamed to "{new_title}"',
 
-TITLE_CHANGED = "title_changed"
+            "score_added": "{new_title}: graded - {new_score} / {new_max_points}",
+            "score_changed": "{new_title}: score changed from {old_score} to {new_score}",
+            "max_points_changed": "{new_title}: max points changed from {old_max_points} to {new_max_points}",
 
-SCORE_ADDED = "score_added"
-SCORE_CHANGED = "score_changed"
-MAX_POINTS_CHANGED = "max_points_changed"
+            "due_date_changed": "{new_title}: due date changed from {old_due_date} to {new_due_date}",
+            "due_date_added": "{new_title}: due date set to {new_due_date}",
+            "due_date_removed": "{old_title}: due date removed",
 
-DUE_DATE_CHANGED = "due_date_changed"
-DUE_DATE_ADDED = "due_date_added"
-DUE_DATE_REMOVED = "due_date_removed"
+            "open_date_changed": "{new_title}: open date changed from {old_open_date} to {new_open_date}",
+            "open_date_added": "{new_title}: open date set to {new_open_date}",
+            "open_date_removed": "{old_title}: open date removed",
 
-OPEN_DATE_CHANGED = "open_date_changed"
-OPEN_DATE_ADDED = "open_date_added"
-OPEN_DATE_REMOVED = "open_date_removed"
+            "close_date_changed": "{new_title}: close date changed from {old_close_date} to {new_close_date}",
+            "close_date_added": "{new_title}: close date set to {new_close_date}",
+            "close_date_removed": "{old_title}: close date removed",
 
-CLOSE_DATE_CHANGED = "close_date_changed"
-CLOSE_DATE_ADDED = "close_date_added"
-CLOSE_DATE_REMOVED = "close_date_removed"
-
-ASSIGNMENT_OPENED = "assignment_opened"  # was "not available until", now past/gone
-ASSIGNMENT_CLOSED = "assignment_closed"  # now past close_date
-
-# --- Human-readable labels ---
-
-LABELS: dict[str, str] = {
-    NEW_ASSIGNMENT: "New assignment: {new_title}",
-    ASSIGNMENT_REMOVED: "Assignment removed: {old_title}",
-
-    TITLE_CHANGED: '"{old_title}" was renamed to "{new_title}"',
-
-    SCORE_ADDED: "{new_title}: graded — {new_score} / {new_max_points}",
-    SCORE_CHANGED: "{new_title}: score changed from {old_score} to {new_score}",
-    MAX_POINTS_CHANGED: "{new_title}: max points changed from {old_max_points} to {new_max_points}",
-
-    DUE_DATE_CHANGED: "{new_title}: due date changed from {old_due_date} to {new_due_date}",
-    DUE_DATE_ADDED: "{new_title}: due date set to {new_due_date}",
-    DUE_DATE_REMOVED: "{old_title}: due date removed",
-
-    OPEN_DATE_CHANGED: "{new_title}: open date changed from {old_open_date} to {new_open_date}",
-    OPEN_DATE_ADDED: "{new_title}: open date set to {new_open_date}",
-    OPEN_DATE_REMOVED: "{old_title}: open date removed",
-
-    CLOSE_DATE_CHANGED: "{new_title}: close date changed from {old_close_date} to {new_close_date}",
-    CLOSE_DATE_ADDED: "{new_title}: close date set to {new_close_date}",
-    CLOSE_DATE_REMOVED: "{old_title}: close date removed",
-
-    ASSIGNMENT_OPENED: "{new_title} is now open",
-    ASSIGNMENT_CLOSED: "{new_title} is now closed",
-}
+            "assignment_opened": "{new_title} is now open",  # was "not available until", now past/gone
+            "assignment_closed": "{new_title} is now closed",  # now past close_date
+        }
+    }
 
 
-def format_notification(key: str, **kwargs) -> str:
-    """Return a formatted notification string for the given event key."""
-    template = LABELS.get(key)
+
+
+# Fields that are compared field-by-field for changes.
+# Each entry: (field_name, added_key, changed_key, removed_key)
+# A key of None means that event doesn't exist (skip it).
+_FIELD_EVENTS: list[tuple[str, str | None, str | None, str | None]] = [
+    ("title",       None,               "title_changed",        None),
+    ("score",       "score_added",      "score_changed",        None),
+    ("max_points",  None,               "max_points_changed",   None),
+    ("due_date",    "due_date_added",   "due_date_changed",     "due_date_removed"),
+    ("open_date",   "open_date_added",  "open_date_changed",    "open_date_removed"),
+    ("close_date",  "close_date_added", "close_date_changed",   "close_date_removed"),
+]
+
+
+def diff_assignments(
+    old: dict[str, dict],
+    new: dict[str, dict],
+    enabled: dict[str, bool] | None = None,
+) -> dict[str, list[dict[str, str]]]:
+    """
+    Compare two snapshots of assignments and return the notifications to send.
+
+    Parameters
+    ----------
+    old, new:
+        Dicts keyed by assignment id, each value is an assignment dict as
+        returned by ``parse_assignment_row`` (fields: id, title, due_date,
+        open_date, close_date, score, max_points).
+    enabled:
+        Optional mapping of event key -> bool drawn from the config's
+        ``notifications["assignments"]`` block.  When provided, events whose
+        key is False are silently skipped.  Pass None to emit everything.
+
+    Returns
+    -------
+    A dict keyed by assignment id, each value being a list of notification
+    dicts in the order they should be sent::
+
+        {
+            "123": [
+                {"key": "score_added", "label": "Homework 1: graded - 95 / 100"},
+            ],
+            "456": [
+                {"key": "assignment_removed", "label": "Assignment removed: Quiz 3"},
+            ],
+        }
+
+    """
+
+    def _is_enabled(key: str) -> bool:
+        if enabled is None:
+            return True
+        return enabled.get(key, True)
+
+    def _fmt(key: str, old_a: dict | None, new_a: dict | None) -> dict[str, str]:
+        """Build a notification dict for *key* using whichever assignment is available."""
+        a_old = old_a or {}
+        a_new = new_a or {}
+        kwargs = {f"old_{k}": v for k, v in a_old.items()}
+        kwargs.update({f"new_{k}": v for k, v in a_new.items()})
+        return {"key": key, "label": format_notification("assignments", key, **kwargs)}
+
+    result: dict[str, list[dict[str, str]]] = {}
+
+    old_ids = set(old)
+    new_ids = set(new)
+
+    # --- Removed assignments
+    for aid in old_ids - new_ids:
+        result[aid] = [_fmt("assignment_removed", old[aid], None)]
+
+    # --- New assignments
+    for aid in new_ids - old_ids:
+        result[aid] = [_fmt("new_assignment", None, new[aid])]
+
+    # --- Changed assignments
+    for aid in old_ids & new_ids:
+        old_a = old[aid]
+        new_a = new[aid]
+        notifs: list[dict[str, str]] = []
+
+        for field, added_key, changed_key, removed_key in _FIELD_EVENTS:
+            old_val = old_a.get(field)
+            new_val = new_a.get(field)
+
+            if old_val == new_val:
+                continue
+
+            if old_val is None and new_val is not None:
+                # Value was added
+                if added_key:
+                    notifs.append(_fmt(added_key, old_a, new_a))
+
+            elif old_val is not None and new_val is None:
+                # Value was removed - check for synthetic open/close events first.
+                if field == "open_date":    # TODO: RECONSIDER THIS LOGIC
+                    # open_date gone -> assignment is now open; suppress plain open_date_removed
+                    notifs.append(_fmt("assignment_opened", old_a, new_a))
+                elif field == "close_date":
+                    # close_date gone -> assignment is now closed; suppress plain close_date_removed
+                    notifs.append(_fmt("assignment_closed", old_a, new_a))
+                elif removed_key:
+                    notifs.append(_fmt(removed_key, old_a, new_a))
+
+            else:
+                # Value changed
+                if changed_key:
+                    notifs.append(_fmt(changed_key, old_a, new_a))
+
+        if notifs:
+            result[aid] = notifs
+
+    # --- Filter by enabled events
+    if enabled is not None:
+        result = {
+            aid: [n for n in notifs if _is_enabled(n["key"])]
+            for aid, notifs in result.items()
+        }
+        result = {aid: notifs for aid, notifs in result.items() if notifs}
+
+    return result
+
+
+def format_notification(category: str, key: str, **kwargs) -> str:
+    """Return a formatted notification string for the given category and event key."""
+    category_labels = LABELS.get(category)
+    if category_labels is None:
+        raise KeyError(f"Unknown notification category: '{category}'")
+    template = category_labels.get(key)
     if template is None:
-        raise KeyError(f"Unknown notification key: '{key}'")
+        raise KeyError(f"Unknown notification key: '{key}' in category '{category}'")
     return template.format_map(kwargs)
