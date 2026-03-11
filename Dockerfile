@@ -31,7 +31,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Download the Camoufox browser binary
 RUN python -m camoufox fetch
 
-COPY . .
+#COPY . .
+# copy from / to /app
+COPY . /app
 
 CMD ["python", "main.py"]
 
