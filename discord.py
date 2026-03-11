@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import os
+import random
+import time
+
 import requests
 
 # Discord embed color per event key
@@ -25,11 +28,15 @@ def send_course_notifications(
     *,
     webhook_url: str | None = None,
 ) -> None:
-    """Post one Discord embed per notification event."""
+    """Post one Discord embed per notification event, with retry/backoff."""
     url = webhook_url or os.getenv("DISCORD_WEBHOOK")
     if not url:
         print("DISCORD_WEBHOOK not set: skipping Discord notifications.")
         return
+
+    max_retries = 5
+    base_backoff = 1.0   # seconds
+    max_backoff  = 30.0  # seconds
 
     for _assignment_id, assignment_notifs in sorted_notifs:
         for n in assignment_notifs:
@@ -38,5 +45,50 @@ def send_course_notifications(
                 "color": _colour_for(n["key"]),
                 "footer": {"text": f"Course {course_id}"},
             }
-            resp = requests.post(url, json={"embeds": [embed]}, timeout=10)
-            resp.raise_for_status()
+
+            attempt = 0
+            while True:
+                try:
+                    resp = requests.post(url, json={"embeds": [embed]}, timeout=10)
+
+                    if resp.status_code == 429:
+                        retry_after = 0.0
+                        try:
+                            retry_after = float(resp.json().get("retry_after", 0))
+                        except (ValueError, TypeError, requests.JSONDecodeError):
+                            pass
+
+                        if attempt >= max_retries:
+                            print(f"Discord 429: max retries reached for course {course_id}; skipping event.")
+                            break
+
+                        if retry_after <= 0:
+                            retry_after = min(max_backoff, base_backoff * (2 ** attempt))
+                            retry_after += random.uniform(0, 0.5)
+
+                        print(f"Discord rate-limited (429). Retrying in {retry_after:.2f}s...")
+                        time.sleep(retry_after)
+                        attempt += 1
+                        continue
+
+                    if 500 <= resp.status_code < 600:
+                        if attempt >= max_retries:
+                            print(f"Discord {resp.status_code}: max retries reached for course {course_id}; skipping event.")
+                            break
+                        backoff = min(max_backoff, base_backoff * (2 ** attempt)) + random.uniform(0, 0.5)
+                        print(f"Discord server error {resp.status_code}. Retrying in {backoff:.2f}s...")
+                        time.sleep(backoff)
+                        attempt += 1
+                        continue
+
+                    resp.raise_for_status()
+                    break
+
+                except requests.RequestException as exc:
+                    if attempt >= max_retries:
+                        print(f"Discord request failed after {max_retries} retries: {exc}; skipping event.")
+                        break
+                    backoff = min(max_backoff, base_backoff * (2 ** attempt)) + random.uniform(0, 0.5)
+                    print(f"Discord request error: {exc}. Retrying in {backoff:.2f}s...")
+                    time.sleep(backoff)
+                    attempt += 1

@@ -110,8 +110,10 @@ def run_checks(page):
 
         course["assignments"] = new_assignments_list
 
-    with open(data_file, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+        with open(data_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+
 
 
 with Camoufox(headless=headless) as browser:
