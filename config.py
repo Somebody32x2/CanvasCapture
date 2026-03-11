@@ -1,7 +1,7 @@
 """
 config.py - load, save, and interactively configure settings.
 
-Config file: config.json (next to this script)
+Config file: config.json (in DATA_DIR specified by .env, or current directory)
 If no file exists, DEFAULT_CONFIG is used as the baseline.
 
 Run this file directly to launch the setup wizard:
@@ -12,12 +12,19 @@ Run this file directly to launch the setup wizard:
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
 from notifications import LABELS
 
-CONFIG_PATH = Path(__file__).parent / "config.json"
+load_dotenv()
+
+# Use DATA_DIR from environment, default to current directory
+data_dir = os.getenv("DATA_DIR", ".")
+Path(data_dir).mkdir(parents=True, exist_ok=True)
+CONFIG_PATH = Path(data_dir) / "config.json"
 
 # Defaults
 

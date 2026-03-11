@@ -2,6 +2,7 @@ import os
 import json
 import time
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from dotenv import load_dotenv
 from camoufox.sync_api import Camoufox
@@ -14,6 +15,11 @@ import notifications
 import config
 
 load_dotenv()
+
+# Use DATA_DIR from environment, default to current directory
+data_dir = os.getenv("DATA_DIR", ".")
+Path(data_dir).mkdir(parents=True, exist_ok=True)
+data_file = Path(data_dir) / "data.json"
 
 courses_env = os.getenv("COURSE_IDS", "")
 courses_list = [c.strip() for c in courses_env.split(",") if c.strip()]
@@ -104,7 +110,7 @@ def run_checks(page):
 
         course["assignments"] = new_assignments_list
 
-    with open("data.json", "w", encoding="utf-8") as f:
+    with open(data_file, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 

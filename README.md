@@ -5,4 +5,4 @@ camoufox fetch
 (python -m camoufox fetch on linux)
 
 ### To Do
-- [ ] Fewer Checks at Night
+- [x] Fewer Checks at Night
