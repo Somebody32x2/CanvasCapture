@@ -35,6 +35,6 @@ COPY . .
 # copy from / to /app
 COPY . /app
 
-#CMD ["python", "main.py"]
-CMD ["sleep", "100"]
+CMD ["python", "main.py"]
+#CMD ["sleep", "100"]
 
