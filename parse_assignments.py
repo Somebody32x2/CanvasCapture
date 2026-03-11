@@ -3,6 +3,8 @@ from pathlib import Path
 from dateutil import parser as dateutil_parser
 from dateutil.parser import ParserError
 
+from log import log
+
 # Log parsing errors to errors.log next to this file
 _log = logging.getLogger("parse_assignments")
 if not _log.handlers:
@@ -109,6 +111,6 @@ def parse_assignment_row(row) -> dict | None:
 
     except Exception as e:
         msg = f"Failed to parse assignment id={assignment_id!r}: {e}"
-        print(msg)
+        log(msg)
         _log.error(msg, exc_info=True)
         return None

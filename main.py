@@ -13,6 +13,7 @@ import read_data
 import parse_assignments
 import notifications
 import config
+from log import log
 
 load_dotenv()
 
@@ -65,7 +66,7 @@ def get_sleep_seconds() -> float:
         night_interval = night_cfg.get("check_interval_minutes", 180) * 60
         time_to_day = seconds_until_night_end(night_cfg)
         sleep = min(night_interval, time_to_day)
-        print(f"Night mode active - sleeping {sleep / 60:.1f} minutes.")
+        log(f"Night mode active - sleeping {sleep / 60:.1f} minutes.")
         return sleep
 
     return interval_seconds
@@ -81,7 +82,7 @@ def run_checks(page):
 
     for course in data.get("courses", []):
         course_id = course.get("id")
-        print(f"Checking course {course_id}...")
+        log(f"Checking course {course_id}...")
         page.goto(f"{canvas_url}/courses/{course_id}/assignments")
         page.wait_for_load_state("networkidle")
         assignment_rows = page.query_selector_all(".ig-row")
@@ -104,7 +105,7 @@ def run_checks(page):
         )
         for assignment_id, assignment_notifs in sorted_notifs:
             for n in assignment_notifs:
-                print(f"  [{assignment_id}] {n['label']}")
+                log(f"  [{assignment_id}] {n['label']}")
 
         discord.send_course_notifications(course_id, sorted_notifs)
 
@@ -117,12 +118,12 @@ def run_checks(page):
 
 
 with Camoufox(headless=headless) as browser:
-    print(username, canvas_url, data_dir)
+    log(f"Starting: username={username} canvas_url={canvas_url} data_dir={data_dir}")
     open("log.txt", "a", encoding="utf-8").write(f"\n\n{datetime.now()}: Starting checks...\n")
     try:
         page = sign_in.sign_in(username, password, canvas_url, browser)
     except Exception as e1:
-        print(f"Error during check: {e1}")
+        log(f"Error during sign in: {e1}")
         time.sleep(100000)
         exit(1)
 
@@ -130,17 +131,17 @@ with Camoufox(headless=headless) as browser:
         try:
             run_checks(page)
         except Exception as e:
-            print(f"Error during check: {e}")
-            print("Attempting to re-sign in...")
+            log(f"Error during check: {e}")
+            log("Attempting to re-sign in...")
             try:
                 page = sign_in.sign_in(username, password, canvas_url, browser)
                 run_checks(page)
             except Exception as e2:
-                print(f"Re-sign in failed: {e2}")
+                log(f"Re-sign in failed: {e2}")
                 time.sleep(200)
                 open("error.log", "a", encoding="utf-8").write(f"{datetime.now()}: {e}\n{e2}\n")
                 open(data_dir / "data.json", "a", encoding="utf-8").write(f"\n\n{datetime.now()}: {e}\n{e2}\n")
 
         sleep_secs = get_sleep_seconds()
-        print(f"Sleeping {sleep_secs / 60:.1f} minutes...")
+        log(f"Sleeping {sleep_secs / 60:.1f} minutes...")
         time.sleep(sleep_secs)

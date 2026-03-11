@@ -1,8 +1,10 @@
 import time
 
+from log import log
+
 
 def sign_in(username, password, url, browser):
-    # print(username, password)
+    # log(username, password)
     page = browser.new_page()
     page.goto(url)
     page.wait_for_load_state("networkidle")
@@ -16,7 +18,7 @@ def sign_in(username, password, url, browser):
         if url not in page.url:
             open("log.txt", "a", encoding="utf-8").write(page.url + "\n" + page.content() + "\n\n")
             raise Exception("Login failed.")
-        print("Logged in")
+        log("Logged in")
     else:
-        print("Already logged in")
+        log("Already logged in")
     return page
