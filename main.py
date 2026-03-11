@@ -115,6 +115,8 @@ def run_checks(page):
 
 
 with Camoufox(headless=headless) as browser:
+    print(username, canvas_url, data_dir)
+    open("log.txt", "a", encoding="utf-8").write(f"\n\n{datetime.now()}: Starting checks...\n")
     page = sign_in.sign_in(username, password, canvas_url, browser)
 
     while True:

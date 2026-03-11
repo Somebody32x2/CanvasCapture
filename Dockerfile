@@ -33,7 +33,7 @@ RUN python -m camoufox fetch
 
 COPY . .
 # copy from / to /app
-COPY . /app
+#COPY . /app
 
 CMD ["python", "main.py"]
 #CMD ["sleep", "100"]
