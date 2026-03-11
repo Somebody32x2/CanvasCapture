@@ -128,6 +128,9 @@ with Camoufox(headless=headless) as browser:
                 run_checks(page)
             except Exception as e2:
                 print(f"Re-sign in failed: {e2}")
+                time.sleep(200)
+                open("error.log", "a", encoding="utf-8").write(f"{datetime.now()}: {e}\n{e2}\n")
+                open(data_dir / "data.json", "a", encoding="utf-8").write(f"\n\n{datetime.now()}: {e}\n{e2}\n")
 
         sleep_secs = get_sleep_seconds()
         print(f"Sleeping {sleep_secs / 60:.1f} minutes...")
