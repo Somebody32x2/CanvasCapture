@@ -119,11 +119,10 @@ def run_checks(page):
 
 with Camoufox(headless=headless) as browser:
     log(f"Starting: username={username} canvas_url={canvas_url} data_dir={data_dir}")
-    open("log.txt", "a", encoding="utf-8").write(f"\n\n{datetime.now()}: Starting checks...\n")
     try:
         page = sign_in.sign_in(username, password, canvas_url, browser)
     except Exception as e1:
-        log(f"Error during sign in: {e1}")
+        log(f"[ERROR] Error during sign in: {e1}")
         time.sleep(100000)
         exit(1)
 
@@ -131,16 +130,14 @@ with Camoufox(headless=headless) as browser:
         try:
             run_checks(page)
         except Exception as e:
-            log(f"Error during check: {e}")
+            log(f"[ERROR] Error during check: {e}")
             log("Attempting to re-sign in...")
             try:
                 page = sign_in.sign_in(username, password, canvas_url, browser)
                 run_checks(page)
             except Exception as e2:
-                log(f"Re-sign in failed: {e2}")
+                log(f"[ERROR] Re-sign in failed: {e2}")
                 time.sleep(200)
-                open("error.log", "a", encoding="utf-8").write(f"{datetime.now()}: {e}\n{e2}\n")
-                open(data_dir / "data.json", "a", encoding="utf-8").write(f"\n\n{datetime.now()}: {e}\n{e2}\n")
 
         sleep_secs = get_sleep_seconds()
         log(f"Sleeping {sleep_secs / 60:.1f} minutes...")

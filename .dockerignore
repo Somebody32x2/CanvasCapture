@@ -3,5 +3,7 @@ __pycache__/
 *.pyo
 .env
 errors.log
+app.log
+app-verbose.log
 data.json
 

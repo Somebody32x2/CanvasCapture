@@ -1,17 +1,9 @@
-import logging
 from pathlib import Path
 from dateutil import parser as dateutil_parser
 from dateutil.parser import ParserError
 
 from log import log
 
-# Log parsing errors to errors.log next to this file
-_log = logging.getLogger("parse_assignments")
-if not _log.handlers:
-    _handler = logging.FileHandler(Path(__file__).parent / "errors.log", encoding="utf-8")
-    _handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
-    _log.addHandler(_handler)
-    _log.setLevel(logging.ERROR)
 
 
 def parse_canvas_date(raw: str | None, field: str) -> str | None:
@@ -110,7 +102,5 @@ def parse_assignment_row(row) -> dict | None:
         }
 
     except Exception as e:
-        msg = f"Failed to parse assignment id={assignment_id!r}: {e}"
-        log(msg)
-        _log.error(msg, exc_info=True)
+        log(f"[ERROR] Failed to parse assignment id={assignment_id!r}: {e}")
         return None
