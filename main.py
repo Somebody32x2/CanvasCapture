@@ -38,6 +38,10 @@ except Exception:
     log(f"Unknown timezone {timezone_str}, defaulting to US/Eastern")
     tz = ZoneInfo("US/Eastern")
 
+# Initialize logging with configured timezone
+from log import set_log_timezone
+set_log_timezone(tz)
+
 
 def is_night_time(night_cfg: dict) -> bool:
     now = datetime.now(tz)
