@@ -38,7 +38,8 @@ def sign_in(username, password, url, browser):
         page.wait_for_load_state("networkidle")
         if url not in page.url:
             _write_verbose_log(page.url + f" not yet at {url} after submission", page.content())
-            raise Exception("Login failed.")
+            error_msg = f"Login failed. Final URL: {page.url}"
+            raise Exception(error_msg)
         log("Logged in")
     else:
         log("Already logged in")

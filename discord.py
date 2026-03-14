@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import random
 import time
+from datetime import datetime
 
 import requests
 
@@ -24,6 +25,68 @@ def _colour_for(key: str) -> int:
     return _COLOUR.get(key, _DEFAULT_COLOUR)
 
 
+def _send_message(
+    embed: dict,
+    webhook_url: str | None = None,
+) -> None:
+    """Send a single Discord embed via webhook with retry/backoff."""
+    url = webhook_url or os.getenv("DISCORD_WEBHOOK")
+    if not url:
+        log("DISCORD_WEBHOOK not set: skipping Discord notification.")
+        return
+
+    max_retries = 5
+    base_backoff = 1.0   # seconds
+    max_backoff  = 30.0  # seconds
+
+    attempt = 0
+    while True:
+        try:
+            resp = requests.post(url, json={"embeds": [embed]}, timeout=10)
+
+            if resp.status_code == 429:
+                retry_after = 0.0
+                try:
+                    retry_after = float(resp.json().get("retry_after", 0))
+                except (ValueError, TypeError, requests.JSONDecodeError):
+                    pass
+
+                if attempt >= max_retries:
+                    log(f"Discord 429: max retries reached; skipping event.")
+                    break
+
+                if retry_after <= 0:
+                    retry_after = min(max_backoff, base_backoff * (2 ** attempt))
+                    retry_after += random.uniform(0, 0.5)
+
+                log(f"Discord rate-limited (429). Retrying in {retry_after:.2f}s...")
+                time.sleep(retry_after)
+                attempt += 1
+                continue
+
+            if 500 <= resp.status_code < 600:
+                if attempt >= max_retries:
+                    log(f"Discord {resp.status_code}: max retries reached; skipping event.")
+                    break
+                backoff = min(max_backoff, base_backoff * (2 ** attempt)) + random.uniform(0, 0.5)
+                log(f"Discord server error {resp.status_code}. Retrying in {backoff:.2f}s...")
+                time.sleep(backoff)
+                attempt += 1
+                continue
+
+            resp.raise_for_status()
+            break
+
+        except requests.RequestException as exc:
+            if attempt >= max_retries:
+                log(f"Discord request failed after {max_retries} retries: {exc}; skipping event.")
+                break
+            backoff = min(max_backoff, base_backoff * (2 ** attempt)) + random.uniform(0, 0.5)
+            log(f"Discord request error: {exc}. Retrying in {backoff:.2f}s...")
+            time.sleep(backoff)
+            attempt += 1
+
+
 def send_course_notifications(
     course_id: str,
     sorted_notifs: list[tuple[str, list[dict[str, str]]]],
@@ -31,15 +94,6 @@ def send_course_notifications(
     webhook_url: str | None = None,
 ) -> None:
     """Post one Discord embed per notification event, with retry/backoff."""
-    url = webhook_url or os.getenv("DISCORD_WEBHOOK")
-    if not url:
-        log("DISCORD_WEBHOOK not set: skipping Discord notifications.")
-        return
-
-    max_retries = 5
-    base_backoff = 1.0   # seconds
-    max_backoff  = 30.0  # seconds
-
     for _assignment_id, assignment_notifs in sorted_notifs:
         for n in assignment_notifs:
             embed = {
@@ -47,50 +101,63 @@ def send_course_notifications(
                 "color": _colour_for(n["key"]),
                 "footer": {"text": f"Course {course_id}"},
             }
+            _send_message(embed, webhook_url=webhook_url)
 
-            attempt = 0
-            while True:
-                try:
-                    resp = requests.post(url, json={"embeds": [embed]}, timeout=10)
 
-                    if resp.status_code == 429:
-                        retry_after = 0.0
-                        try:
-                            retry_after = float(resp.json().get("retry_after", 0))
-                        except (ValueError, TypeError, requests.JSONDecodeError):
-                            pass
+def send_error_notification(
+    error_message: str,
+    error_type: str = "generic",
+    details: dict[str, str] | None = None,
+    *,
+    webhook_url: str | None = None,
+) -> None:
+    """
+    Send a webhook notification about an error with details.
 
-                        if attempt >= max_retries:
-                            log(f"Discord 429: max retries reached for course {course_id}; skipping event.")
-                            break
+    Parameters:
+    - error_message: The main error message to display
+    - error_type: Type of error ("signin_failure", "check_error", "anomaly", etc.)
+    - details: Optional dict of additional field names -> values to include
+    - webhook_url: Optional webhook URL (defaults to DISCORD_WEBHOOK env var)
+    """
+    # Error type configurations
+    error_configs = {
+        "signin_failure": {
+            "title": "❌ Canvas Sign-In Failed",
+            "color": 0xED4245,  # red
+        },
+        "check_error": {
+            "title": "⚠️ Canvas Check Error",
+            "color": 0xFEE75C,  # yellow
+        },
+        "anomaly": {
+            "title": "⚠️ Data Anomaly Detected",
+            "color": 0xFFA500,  # orange
+        },
+        "generic": {
+            "title": "ℹ️ Canvas Error",
+            "color": 0x5DADE2,  # light blue
+        },
+    }
 
-                        if retry_after <= 0:
-                            retry_after = min(max_backoff, base_backoff * (2 ** attempt))
-                            retry_after += random.uniform(0, 0.5)
+    config = error_configs.get(error_type, error_configs["generic"])
 
-                        log(f"Discord rate-limited (429). Retrying in {retry_after:.2f}s...")
-                        time.sleep(retry_after)
-                        attempt += 1
-                        continue
+    embed = {
+        "title": config["title"],
+        "description": error_message,
+        "color": config["color"],
+    }
 
-                    if 500 <= resp.status_code < 600:
-                        if attempt >= max_retries:
-                            log(f"Discord {resp.status_code}: max retries reached for course {course_id}; skipping event.")
-                            break
-                        backoff = min(max_backoff, base_backoff * (2 ** attempt)) + random.uniform(0, 0.5)
-                        log(f"Discord server error {resp.status_code}. Retrying in {backoff:.2f}s...")
-                        time.sleep(backoff)
-                        attempt += 1
-                        continue
+    if details:
+        embed["fields"] = [
+            {
+                "name": key,
+                "value": value,
+                "inline": False
+            }
+            for key, value in details.items()
+        ]
 
-                    resp.raise_for_status()
-                    break
+    _send_message(embed, webhook_url=webhook_url)
 
-                except requests.RequestException as exc:
-                    if attempt >= max_retries:
-                        log(f"Discord request failed after {max_retries} retries: {exc}; skipping event.")
-                        break
-                    backoff = min(max_backoff, base_backoff * (2 ** attempt)) + random.uniform(0, 0.5)
-                    log(f"Discord request error: {exc}. Retrying in {backoff:.2f}s...")
-                    time.sleep(backoff)
-                    attempt += 1
+

@@ -21,7 +21,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libnspr4 \
     libasound2 \
     fonts-liberation \
+    nano \
+    fish \
     && rm -rf /var/lib/apt/lists/*
+
+# Set fish as the default shell
+RUN chsh -s /usr/bin/fish
 
 WORKDIR /app
 

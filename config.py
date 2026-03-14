@@ -65,6 +65,7 @@ def build_default_notifications() -> dict[str, dict[str, bool]]:
 DEFAULT_CONFIG: dict[str, Any] = {
     "check_interval_minutes": 30,
     "headless": True,
+    "timezone": "US/Eastern",
     "notifications": build_default_notifications(),
     "night_mode": {
         "enabled": True,
@@ -157,6 +158,14 @@ def run_wizard() -> None:
         "Run browser headless (no visible window)?",
         config.get("headless", DEFAULT_CONFIG["headless"]),
     )
+
+    current_tz = config.get("timezone", DEFAULT_CONFIG["timezone"])
+    tz_input = input(f"  Timezone for scheduling (e.g., US/Eastern, US/Central) [{current_tz}]: ").strip()
+    if tz_input:
+        config["timezone"] = tz_input
+    else:
+        config["timezone"] = current_tz
+
 
     # Notification events
     print("\n-- Notifications ------------------------------------------------")
