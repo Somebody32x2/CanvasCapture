@@ -2,3 +2,4 @@ camoufox
 python-dotenv
 requests
 python-dateutil
+tzdata

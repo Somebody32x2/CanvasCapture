@@ -1,10 +1,8 @@
 import os
-import os
 import json
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 from camoufox.sync_api import Camoufox
@@ -15,7 +13,7 @@ import read_data
 import parse_assignments
 import notifications
 import config
-from log import log
+from log import log, set_log_timezone
 
 load_dotenv()
 
@@ -31,15 +29,15 @@ cfg = config.load()
 enabled_notifications = cfg.get("notifications", {}).get("assignments")
 headless = cfg.get("headless", True)
 interval_seconds = cfg.get("check_interval_minutes", 30) * 60
-timezone_str = cfg.get("timezone", "US/Eastern")
+timezone_str = cfg.get("timezone", config.DEFAULT_CONFIG["timezone"])
 try:
-    tz = ZoneInfo(timezone_str)
-except Exception:
-    log(f"Unknown timezone {timezone_str}, defaulting to US/Eastern")
-    tz = ZoneInfo("US/Eastern")
+    tz = config.parse_timezone(timezone_str)
+except ValueError as exc:
+    fallback_tz_name = config.DEFAULT_CONFIG["timezone"]
+    log(f"Invalid configured timezone '{timezone_str}': {exc}")
+    log(f"Falling back to '{fallback_tz_name}'.")
+    tz = config.parse_timezone(fallback_tz_name)
 
-# Initialize logging with configured timezone
-from log import set_log_timezone
 set_log_timezone(tz)
 
 
@@ -105,8 +103,8 @@ def _check_mass_change_anomaly(
     if old_count > 0 and new_count == 0:
         log(f"ANOMALY Course {course_id}: Mass assignment loss detected")
         log(f"  Previously had {old_count} assignments, now have {new_count}")
-        log(f"  This may indicate a data corruption or scraping failure")
-        log(f"  Skipping notifications and data persistence to prevent data loss")
+        log("  This may indicate a data corruption or scraping failure")
+        log("  Skipping notifications and data persistence to prevent data loss")
         discord.send_error_notification(
             f"Mass assignment loss in course {course_id}",
             error_type="anomaly",
@@ -123,8 +121,8 @@ def _check_mass_change_anomaly(
         log(f"ANOMALY Course {course_id}: Mass assignment gain detected")
         log(f"  Previously had {old_count} assignments, now have {new_count}")
         log(f"  Added {added_count} new assignments in a single check")
-        log(f"  This may indicate recovery from data corruption or scraping failure")
-        log(f"  Skipping notifications and data persistence to prevent data loss")
+        log("  This may indicate recovery from data corruption or scraping failure")
+        log("  Skipping notifications and data persistence to prevent data loss")
         discord.send_error_notification(
             f"Mass assignment gain in course {course_id}",
             error_type="anomaly",

@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, tzinfo
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
@@ -15,10 +14,10 @@ Path(_data_dir).mkdir(parents=True, exist_ok=True)
 LOG_FILE = Path(_data_dir) / "app.log"
 
 # Timezone for logging - will be set by main.py
-_log_tz: ZoneInfo | None = None
+_log_tz: tzinfo | None = None
 
 
-def set_log_timezone(tz: ZoneInfo) -> None:
+def set_log_timezone(tz: tzinfo) -> None:
     """Set the timezone to use for all log timestamps."""
     global _log_tz
     _log_tz = tz

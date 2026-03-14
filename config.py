@@ -13,8 +13,10 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import tzinfo
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dotenv import load_dotenv
 from notifications import LABELS
@@ -65,7 +67,7 @@ def build_default_notifications() -> dict[str, dict[str, bool]]:
 DEFAULT_CONFIG: dict[str, Any] = {
     "check_interval_minutes": 30,
     "headless": True,
-    "timezone": "US/Eastern",
+    "timezone": "America/New_York",
     "notifications": build_default_notifications(),
     "night_mode": {
         "enabled": True,
@@ -74,6 +76,19 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "check_interval_minutes": 180,
     },
 }
+
+
+def parse_timezone(value: str) -> tzinfo:
+    """Parse an IANA timezone name from config (e.g. America/New_York, UTC)."""
+    text = (value or "").strip()
+    if not text:
+        raise ValueError("Timezone cannot be empty")
+    try:
+        return ZoneInfo(text)
+    except ZoneInfoNotFoundError:
+        raise ValueError(
+            f"Unknown timezone '{text}'. Use an IANA zone name (e.g. America/New_York, UTC)."
+        )
 
 
 def load() -> dict[str, Any]:
@@ -160,11 +175,17 @@ def run_wizard() -> None:
     )
 
     current_tz = config.get("timezone", DEFAULT_CONFIG["timezone"])
-    tz_input = input(f"  Timezone for scheduling (e.g., US/Eastern, US/Central) [{current_tz}]: ").strip()
-    if tz_input:
-        config["timezone"] = tz_input
-    else:
-        config["timezone"] = current_tz
+    while True:
+        tz_input = input(
+            f"  Timezone for scheduling (e.g. America/New_York, Europe/London, UTC) [{current_tz}]: "
+        ).strip()
+        chosen_tz = tz_input or current_tz
+        try:
+            parse_timezone(chosen_tz)
+            config["timezone"] = chosen_tz
+            break
+        except ValueError as exc:
+            print(f"    {exc}")
 
 
     # Notification events
