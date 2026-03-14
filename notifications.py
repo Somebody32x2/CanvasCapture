@@ -1,7 +1,7 @@
 """
-Notification event keys and human-readable labels for assignment changes.
+Notification event keys and human-readable labels.
 Each entry maps a machine-readable key to a label template.
-Placeholders are fully qualified assignment prop names prefixed with old_ or new_,
+Placeholders are fully qualified prop names prefixed with old_ or new_,
 e.g. {old_title}, {new_title}, {old_score}, {new_due_date}, etc.
 """
 
@@ -30,7 +30,10 @@ LABELS: dict[str, dict[str, str]] = {
 
             "assignment_opened": "{new_title} is now open",  # was "not available until", now past/gone
             "assignment_closed": "{new_title} is now closed",  # now past close_date
-        }
+        },
+        "announcements": {
+            "new_announcement": "New announcement: {new_title}",
+        },
     }
 
 
@@ -167,3 +170,20 @@ def format_notification(category: str, key: str, **kwargs) -> str:
     if template is None:
         raise KeyError(f"Unknown notification key: '{key}' in category '{category}'")
     return template.format_map(kwargs)
+
+
+def diff_announcements(
+    old: dict[str, dict],
+    new: dict[str, dict],
+    enabled: dict[str, bool] | None = None,
+) -> list[dict]:
+    """
+    Return a list of newly-appeared announcement dicts.
+
+    Each returned dict is the full announcement (id, title, content, posted_at).
+    """
+    if enabled is not None and not enabled.get("new_announcement", True):
+        return []
+
+    new_ids = set(new) - set(old)
+    return [new[aid] for aid in sorted(new_ids)]

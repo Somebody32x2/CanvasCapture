@@ -49,7 +49,10 @@ DEFAULT_NOTIFICATION_OVERRIDES: dict[str, dict[str, bool]] = {
         "close_date_removed":   False,
         "assignment_opened":    False,
         "assignment_closed":    False,
-    }
+    },
+    "announcements": {
+        "new_announcement":     True,
+    },
 }
 
 def build_default_notifications() -> dict[str, dict[str, bool]]:

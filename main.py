@@ -26,7 +26,8 @@ courses_env = os.getenv("COURSE_IDS", "")
 courses_list = [c.strip() for c in courses_env.split(",") if c.strip()]
 
 cfg = config.load()
-enabled_notifications = cfg.get("notifications", {}).get("assignments")
+enabled_assignment_notifs = cfg.get("notifications", {}).get("assignments")
+enabled_announcement_notifs = cfg.get("notifications", {}).get("announcements")
 headless = cfg.get("headless", True)
 interval_seconds = cfg.get("check_interval_minutes", 30) * 60
 timezone_str = cfg.get("timezone", config.DEFAULT_CONFIG["timezone"])
@@ -88,86 +89,82 @@ password = os.getenv("CANVAS_PASSWORD")
 
 def _check_mass_change_anomaly(
     course_id: str,
+    item_type: str,
     old_count: int,
     new_count: int,
     removed_count: int,
     added_count: int,
-) -> bool:
+) -> str | None:
     """
-    Detect if there's a mass change in assignments suggesting data corruption.
+    Detect a mass change in items suggesting data corruption.
 
-    Returns True if anomaly detected (should skip notifications and updates).
-    Returns False if everything looks normal.
+    Returns:
+        None   - no anomaly, proceed normally.
+        "skip" - anomaly; skip notifications AND do not persist data.
+        "save" - anomaly; skip notifications but still persist data.
     """
-    # If we went from having assignments to having none
     if old_count > 0 and new_count == 0:
-        log(f"ANOMALY Course {course_id}: Mass assignment loss detected")
-        log(f"  Previously had {old_count} assignments, now have {new_count}")
+        log(f"ANOMALY Course {course_id}: Found 0 {item_type} (previously had {old_count})")
         log("  This may indicate a data corruption or scraping failure")
         log("  Skipping notifications and data persistence to prevent data loss")
         discord.send_error_notification(
-            f"Mass assignment loss in course {course_id}",
+            f"Found 0 {item_type} in course {course_id} (previously had {old_count})",
             error_type="anomaly",
             details={
                 "Previous Count": str(old_count),
-                "Current Count": str(new_count),
-                "Issue": "All assignments disappeared - possible scraping failure"
-            }
+                "Found": str(new_count),
+                "Issue": f"All {item_type} disappeared - possible scraping failure",
+            },
         )
-        return True
+        return "skip"
 
-    # If we suddenly got way more assignments than we had
-    if old_count > 0 and added_count >= old_count:
-        log(f"ANOMALY Course {course_id}: Mass assignment gain detected")
-        log(f"  Previously had {old_count} assignments, now have {new_count}")
-        log(f"  Added {added_count} new assignments in a single check")
-        log("  This may indicate recovery from data corruption or scraping failure")
-        log("  Skipping notifications and data persistence to prevent data loss")
+    if added_count > 3 and (old_count == 0 or added_count >= old_count):
+        log(f"ANOMALY Course {course_id}: Found {added_count} new {item_type} in a single check (previously had {old_count})")
+        log("  This could be from initial setup, or recovery from a scraping failure")
+        log("  Skipping notifications but saving data")
         discord.send_error_notification(
-            f"Mass assignment gain in course {course_id}",
+            f"Found {added_count} new {item_type} in course {course_id} in a single check",
             error_type="anomaly",
             details={
                 "Previous Count": str(old_count),
-                "Current Count": str(new_count),
+                "Found": str(new_count),
                 "Added": str(added_count),
-                "Issue": "Too many new assignments - possible recovery from corruption"
-            }
+                "Note": "This could be from initial setup, or recovery from a scraping failure. "
+                        "Skipping notifications but saving data.",
+            },
         )
-        return True
+        return "save"
 
-    return False
+    return None
 
 
-def run_checks(page):
-    """Scrape all courses, diff assignments, send notifications, persist data."""
-    data = read_data.load_data(courses_list)
+def _check_and_notify_assignments(course, course_id, page, data):
+    """Scrape assignments for a course, diff, notify, and persist."""
+    page.goto(f"{canvas_url}/courses/{course_id}/assignments")
+    page.wait_for_load_state("networkidle")
+    assignment_rows = page.query_selector_all(".ig-row")
 
-    for course in data.get("courses", []):
-        course_id = course.get("id")
-        log(f"Checking course {course_id}...")
-        page.goto(f"{canvas_url}/courses/{course_id}/assignments")
-        page.wait_for_load_state("networkidle")
-        assignment_rows = page.query_selector_all(".ig-row")
+    new_list = [
+        a for row in assignment_rows
+        if (a := parse_assignments.parse_assignment_row(row)) is not None
+    ]
 
-        new_assignments_list = [
-            a for row in assignment_rows
-            if (a := parse_assignments.parse_assignment_row(row)) is not None
-        ]
+    old_map = {a["id"]: a for a in course.get("assignments", [])}
+    new_map = {a["id"]: a for a in new_list}
 
-        old_map = {a["id"]: a for a in course.get("assignments", [])}
-        new_map = {a["id"]: a for a in new_assignments_list}
+    old_ids = set(old_map)
+    new_ids = set(new_map)
 
-        # Check for mass changes before processing
-        old_ids = set(old_map.keys())
-        new_ids = set(new_map.keys())
-        removed_count = len(old_ids - new_ids)
-        added_count = len(new_ids - old_ids)
+    anomaly = _check_mass_change_anomaly(
+        course_id, "assignments",
+        len(old_map), len(new_map),
+        len(old_ids - new_ids), len(new_ids - old_ids),
+    )
+    if anomaly == "skip":
+        return
 
-        if _check_mass_change_anomaly(course_id, len(old_map), len(new_map), removed_count, added_count):
-            log(f"  Skipping course {course_id} due to anomaly.")
-            continue
-
-        notifs = notifications.diff_assignments(old_map, new_map, enabled=enabled_notifications)
+    if anomaly is None:
+        notifs = notifications.diff_assignments(old_map, new_map, enabled=enabled_assignment_notifs)
         sorted_notifs = sorted(
             notifs.items(),
             key=lambda item: (
@@ -181,10 +178,67 @@ def run_checks(page):
 
         discord.send_course_notifications(course_id, sorted_notifs)
 
-        course["assignments"] = new_assignments_list
+    course["assignments"] = new_list
 
-        with open(data_file, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+    with open(data_file, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def _check_and_notify_announcements(course, course_id, page, data):
+    """Scrape announcements for a course, diff, notify, and persist."""
+    page.goto(f"{canvas_url}/courses/{course_id}/announcements")
+    page.wait_for_load_state("networkidle")
+    try:
+        page.wait_for_selector(".ic-announcement-row")
+    except Exception:
+        log(f"  No announcements found for course {course_id}.")
+        return
+    rows = page.query_selector_all(".ic-announcement-row")
+    log(f"  Found {len(rows)} announcements.")
+
+    new_list = [
+        a for row in rows
+        if (a := parse_assignments.parse_announcement_row(row)) is not None
+    ]
+
+    old_map = {a["id"]: a for a in course.get("announcements", [])}
+    new_map = {a["id"]: a for a in new_list}
+
+    old_ids = set(old_map)
+    new_ids = set(new_map)
+
+    anomaly = _check_mass_change_anomaly(
+        course_id, "announcements",
+        len(old_map), len(new_map),
+        len(old_ids - new_ids), len(new_ids - old_ids),
+    )
+    if anomaly == "skip":
+        return
+
+    if anomaly is None:
+        new_announcements = notifications.diff_announcements(
+            old_map, new_map, enabled=enabled_announcement_notifs,
+        )
+        for ann in new_announcements:
+            log(f"  [announcement {ann['id']}] {ann['title']}")
+
+        discord.send_announcement_notifications(course_id, new_announcements)
+
+    course["announcements"] = new_list
+
+    with open(data_file, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def run_checks(page):
+    """Scrape all courses, diff items, send notifications, persist data."""
+    data = read_data.load_data(courses_list)
+
+    for course in data.get("courses", []):
+        course_id = course.get("id")
+        log(f"Checking course {course_id}...")
+        _check_and_notify_assignments(course, course_id, page, data)
+        _check_and_notify_announcements(course, course_id, page, data)
 
 
 
@@ -195,7 +249,7 @@ with Camoufox(headless=headless) as browser:
     except Exception as e1:
         log(f"[ERROR] Error during initial sign in: {e1}")
         discord.send_error_notification(str(e1), error_type="signin_failure")
-        time.sleep(100000)
+        time.sleep(3 * 60 * 60)
         exit(1)
 
     while True:

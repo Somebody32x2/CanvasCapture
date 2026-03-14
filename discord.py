@@ -10,19 +10,20 @@ import requests
 from log import log
 
 # Discord embed color per event key
-_COLOUR = {
+_COLOR = {
     "new_assignment":       0x57F287,  # green
     "assignment_removed":   0xED4245,  # red
     "score_added":          0xFFD700,  # gold
     "score_changed":        0xFEE75C,  # yellow
     "assignment_opened":    0x5865F2,  # blurple
     "assignment_closed":    0x99AAB5,  # grey
+    "new_announcement":     0x5865F2,  # blurple
 }
-_DEFAULT_COLOUR = 0x5DADE2  # light blue
+_DEFAULT_COLOR = 0x5DADE2  # light blue
 
 
-def _colour_for(key: str) -> int:
-    return _COLOUR.get(key, _DEFAULT_COLOUR)
+def _color_for(key: str) -> int:
+    return _COLOR.get(key, _DEFAULT_COLOR)
 
 
 def _send_message(
@@ -98,10 +99,31 @@ def send_course_notifications(
         for n in assignment_notifs:
             embed = {
                 "description": n["label"],
-                "color": _colour_for(n["key"]),
+                "color": _color_for(n["key"]),
                 "footer": {"text": f"Course {course_id}"},
             }
             _send_message(embed, webhook_url=webhook_url)
+
+
+def send_announcement_notifications(
+    course_id: str,
+    announcements: list[dict],
+    *,
+    webhook_url: str | None = None,
+) -> None:
+    """Post one Discord embed per new announcement with title, content, and posted time."""
+    for ann in announcements:
+        content = ann.get("content") or ""
+        if len(content) > 2048:
+            content = content[:2045] + "..."
+        posted = ann.get("posted_at") or "Unknown"
+        embed = {
+            "title": ann.get("title") or "New Announcement",
+            "description": content,
+            "color": _color_for("new_announcement"),
+            "footer": {"text": f"Posted: {posted} | Course {course_id}"},
+        }
+        _send_message(embed, webhook_url=webhook_url)
 
 
 def send_error_notification(

@@ -1,4 +1,3 @@
-from pathlib import Path
 from dateutil import parser as dateutil_parser
 from dateutil.parser import ParserError
 
@@ -103,4 +102,40 @@ def parse_assignment_row(row) -> dict | None:
 
     except Exception as e:
         log(f"[ERROR] Failed to parse assignment id={assignment_id!r}: {e}")
+        return None
+
+
+def parse_announcement_row(row) -> dict | None:
+    """Parse a single announcement row from the announcements page."""
+    try:
+        link_el = row.query_selector("a.ic-item-row__content-link")
+        if not link_el:
+            return None
+        href = link_el.get_attribute("href") or ""
+        announcement_id = href.rstrip("/").split("/")[-1]
+
+        title_el = row.query_selector(".ic-item-row__content-link-container h3")
+        if title_el:
+            sr_el = title_el.query_selector(".css-r9cwls-screenReaderContent")
+            if sr_el:
+                sr_el.evaluate("el => el.remove()")
+            title = title_el.inner_text().strip()
+        else:
+            title = None
+
+        content_el = row.query_selector(".ic-announcement-row__content")
+        content = content_el.inner_text().strip() if content_el else None
+
+        timestamp_el = row.query_selector(".ic-item-row__meta-content-timestamp")
+        posted_at = timestamp_el.inner_text().strip() if timestamp_el else None
+
+        return {
+            "id": announcement_id,
+            "title": title,
+            "content": content,
+            "posted_at": posted_at,
+        }
+
+    except Exception as e:
+        log(f"[ERROR] Failed to parse announcement: {e}")
         return None
