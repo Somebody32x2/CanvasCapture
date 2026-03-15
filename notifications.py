@@ -55,45 +55,20 @@ _FIELD_EVENTS: list[tuple[str, str | None, str | None, str | None]] = [
 def diff_assignments(
     old: dict[str, dict],
     new: dict[str, dict],
-    enabled: dict[str, bool] | None = None,
 ) -> dict[str, list[dict[str, str]]]:
     """
-    Compare two snapshots of assignments and return the notifications to send.
+    Compare two snapshots of assignments and return all detected changes.
 
-    Parameters
-    ----------
-    old, new:
-        Dicts keyed by assignment id, each value is an assignment dict as
-        returned by ``parse_assignment_row`` (fields: id, title, due_date,
-        open_date, close_date, score, max_points).
-    enabled:
-        Optional mapping of event key -> bool drawn from the config's
-        ``notifications["assignments"]`` block.  When provided, events whose
-        key is False are silently skipped.  Pass None to emit everything.
-
-    Returns
-    -------
-    A dict keyed by assignment id, each value being a list of notification
-    dicts in the order they should be sent::
+    Returns a dict keyed by assignment id, each value being a list of
+    notification dicts::
 
         {
-            "123": [
-                {"key": "score_added", "label": "Homework 1: graded - 95 / 100"},
-            ],
-            "456": [
-                {"key": "assignment_removed", "label": "Assignment removed: Quiz 3"},
-            ],
+            "123": [{"key": "score_added", "label": "Homework 1: graded - 95 / 100"}],
+            "456": [{"key": "assignment_removed", "label": "Assignment removed: Quiz 3"}],
         }
-
     """
 
-    def _is_enabled(key: str) -> bool:
-        if enabled is None:
-            return True
-        return enabled.get(key, True)
-
     def _fmt(key: str, old_a: dict | None, new_a: dict | None) -> dict[str, str]:
-        """Build a notification dict for *key* using whichever assignment is available."""
         a_old = old_a or {}
         a_new = new_a or {}
         kwargs = {f"old_{k}": v for k, v in a_old.items()}
@@ -150,15 +125,21 @@ def diff_assignments(
         if notifs:
             result[aid] = notifs
 
-    # --- Filter by enabled events
-    if enabled is not None:
-        result = {
-            aid: [n for n in notifs if _is_enabled(n["key"])]
-            for aid, notifs in result.items()
-        }
-        result = {aid: notifs for aid, notifs in result.items() if notifs}
-
     return result
+
+
+def filter_enabled(
+    notifs: dict[str, list[dict[str, str]]],
+    enabled: dict[str, bool] | None,
+) -> dict[str, list[dict[str, str]]]:
+    """Filter a notification dict to only include events enabled in config."""
+    if enabled is None:
+        return notifs
+    filtered = {
+        aid: [n for n in ns if enabled.get(n["key"], True)]
+        for aid, ns in notifs.items()
+    }
+    return {aid: ns for aid, ns in filtered.items() if ns}
 
 
 def format_notification(category: str, key: str, **kwargs) -> str:
@@ -175,15 +156,11 @@ def format_notification(category: str, key: str, **kwargs) -> str:
 def diff_announcements(
     old: dict[str, dict],
     new: dict[str, dict],
-    enabled: dict[str, bool] | None = None,
 ) -> list[dict]:
     """
     Return a list of newly-appeared announcement dicts.
 
     Each returned dict is the full announcement (id, title, content, posted_at).
     """
-    if enabled is not None and not enabled.get("new_announcement", True):
-        return []
-
     new_ids = set(new) - set(old)
     return [new[aid] for aid in sorted(new_ids)]

@@ -13,7 +13,7 @@ import read_data
 import parse_assignments
 import notifications
 import config
-from log import log, set_log_timezone
+from log import log, verbose, set_log_timezone
 
 load_dotenv()
 
@@ -164,19 +164,33 @@ def _check_and_notify_assignments(course, course_id, page, data):
         return
 
     if anomaly is None:
-        notifs = notifications.diff_assignments(old_map, new_map, enabled=enabled_assignment_notifs)
-        sorted_notifs = sorted(
-            notifs.items(),
+        all_notifs = notifications.diff_assignments(old_map, new_map)
+        sorted_all = sorted(
+            all_notifs.items(),
             key=lambda item: (
                 new_map.get(item[0], old_map.get(item[0], {})).get("due_date") or "9999",
                 new_map.get(item[0], old_map.get(item[0], {})).get("title") or "",
             ),
         )
-        for assignment_id, assignment_notifs in sorted_notifs:
+        for assignment_id, assignment_notifs in sorted_all:
             for n in assignment_notifs:
                 log(f"  [{assignment_id}] {n['label']}")
+                old_a = old_map.get(assignment_id)
+                new_a = new_map.get(assignment_id)
+                if old_a:
+                    verbose(f"  [{assignment_id}] old: {old_a}")
+                if new_a:
+                    verbose(f"  [{assignment_id}] new: {new_a}")
 
-        discord.send_course_notifications(course_id, sorted_notifs)
+        enabled_notifs = notifications.filter_enabled(all_notifs, enabled_assignment_notifs)
+        sorted_enabled = sorted(
+            enabled_notifs.items(),
+            key=lambda item: (
+                new_map.get(item[0], old_map.get(item[0], {})).get("due_date") or "9999",
+                new_map.get(item[0], old_map.get(item[0], {})).get("title") or "",
+            ),
+        )
+        discord.send_course_notifications(course_id, sorted_enabled)
 
     course["assignments"] = new_list
 
@@ -216,13 +230,15 @@ def _check_and_notify_announcements(course, course_id, page, data):
         return
 
     if anomaly is None:
-        new_announcements = notifications.diff_announcements(
-            old_map, new_map, enabled=enabled_announcement_notifs,
-        )
-        for ann in new_announcements:
+        all_new = notifications.diff_announcements(old_map, new_map)
+        for ann in all_new:
             log(f"  [announcement {ann['id']}] {ann['title']}")
+            verbose(f"  [announcement {ann['id']}] {ann}")
 
-        discord.send_announcement_notifications(course_id, new_announcements)
+        if enabled_announcement_notifs is None or enabled_announcement_notifs.get("new_announcement", True):
+            discord.send_announcement_notifications(course_id, all_new)
+        else:
+            log(f"  Announcement notifications disabled, skipping {len(all_new)} notification(s).")
 
     course["announcements"] = new_list
 
