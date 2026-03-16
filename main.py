@@ -10,7 +10,7 @@ from camoufox.sync_api import Camoufox
 import discord
 import sign_in
 import read_data
-import parse_assignments
+import parse_site
 import notifications
 import config
 from log import log, verbose, set_log_timezone
@@ -146,7 +146,7 @@ def _check_and_notify_assignments(course, course_id, page, data):
 
     new_list = [
         a for row in assignment_rows
-        if (a := parse_assignments.parse_assignment_row(row)) is not None
+        if (a := parse_site.parse_assignment_row(row)) is not None
     ]
 
     old_map = {a["id"]: a for a in course.get("assignments", [])}
@@ -212,7 +212,7 @@ def _check_and_notify_announcements(course, course_id, page, data):
 
     new_list = [
         a for row in rows
-        if (a := parse_assignments.parse_announcement_row(row)) is not None
+        if (a := parse_site.parse_announcement_row(row)) is not None
     ]
 
     old_map = {a["id"]: a for a in course.get("announcements", [])}

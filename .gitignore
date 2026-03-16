@@ -3,3 +3,6 @@
 data.json
 .session.json
 errors.log
+app-verbose.log
+errors.log
+app.log

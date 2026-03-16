@@ -117,11 +117,16 @@ def send_announcement_notifications(
         if len(content) > 2048:
             content = content[:2045] + "..."
         posted = ann.get("posted_at") or "Unknown"
+        author = ann.get("author")
+        footer_parts = [f"Posted: {posted}"]
+        if author:
+            footer_parts.append(f"By: {author}")
+        footer_parts.append(f"Course {course_id}")
         embed = {
             "title": ann.get("title") or "New Announcement",
             "description": content,
             "color": _color_for("new_announcement"),
-            "footer": {"text": f"Posted: {posted} | Course {course_id}"},
+            "footer": {"text": " | ".join(footer_parts)},
         }
         _send_message(embed, webhook_url=webhook_url)
 

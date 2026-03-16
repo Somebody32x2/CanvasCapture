@@ -129,9 +129,13 @@ def parse_announcement_row(row) -> dict | None:
         timestamp_el = row.query_selector(".ic-item-row__meta-content-timestamp")
         posted_at = timestamp_el.inner_text().strip() if timestamp_el else None
 
+        author_el = row.query_selector(".ic-item-row__author-col [aria-label]")
+        author = author_el.get_attribute("aria-label") if author_el else None
+
         return {
             "id": announcement_id,
             "title": title,
+            "author": author,
             "content": content,
             "posted_at": posted_at,
         }
