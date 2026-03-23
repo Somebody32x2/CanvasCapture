@@ -258,16 +258,21 @@ def run_checks(page):
 
 
 
-with Camoufox(headless=headless) as browser:
-    log(f"Starting: username={username} canvas_url={canvas_url} data_dir={data_dir}")
+browser = Camoufox(headless=headless)
+log(f"Starting: username={username} canvas_url={canvas_url} data_dir={data_dir}")
+try:
+    page, browser = sign_in.sign_in(username, password, canvas_url, browser)
+except Exception as e1:
+    log(f"[ERROR] Error during initial sign in: {e1}")
+    discord.send_error_notification(str(e1), error_type="signin_failure")
     try:
-        page = sign_in.sign_in(username, password, canvas_url, browser)
-    except Exception as e1:
-        log(f"[ERROR] Error during initial sign in: {e1}")
-        discord.send_error_notification(str(e1), error_type="signin_failure")
-        time.sleep(3 * 60 * 60)
-        exit(1)
+        browser.close()
+    except Exception:
+        pass
+    time.sleep(3 * 60 * 60)
+    exit(1)
 
+try:
     while True:
         try:
             run_checks(page)
@@ -275,7 +280,7 @@ with Camoufox(headless=headless) as browser:
             log(f"[ERROR] Error during check: {e}")
             log("Attempting to re-sign in...")
             try:
-                page = sign_in.sign_in(username, password, canvas_url, browser)
+                page, browser = sign_in.sign_in(username, password, canvas_url, browser)
                 run_checks(page)
             except Exception as e2:
                 log(f"[ERROR] Re-sign in failed: {e2}")
@@ -285,3 +290,8 @@ with Camoufox(headless=headless) as browser:
         sleep_secs = get_sleep_seconds()
         log(f"Sleeping {sleep_secs / 60:.1f} minutes...")
         time.sleep(sleep_secs)
+finally:
+    try:
+        browser.close()
+    except Exception:
+        pass
