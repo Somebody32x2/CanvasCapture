@@ -28,7 +28,10 @@ def _create_new_browser():
         cfg = load_config()
         headless = cfg.get("headless", True)
         log("[INFO] Creating new browser instance...")
-        return Camoufox(headless=headless)
+        camoufox_wrapper = Camoufox(headless=headless)
+        # Get the actual browser object from the Camoufox context manager
+        browser = camoufox_wrapper.__enter__()
+        return browser
     except Exception as exc:
         log(f"[ERROR] Failed to create new browser: {exc}")
         raise

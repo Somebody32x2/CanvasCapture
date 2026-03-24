@@ -258,7 +258,8 @@ def run_checks(page):
 
 
 
-browser = Camoufox(headless=headless)
+camoufox_wrapper = Camoufox(headless=headless)
+browser = camoufox_wrapper.__enter__()
 log(f"Starting: username={username} canvas_url={canvas_url} data_dir={data_dir}")
 try:
     page, browser = sign_in.sign_in(username, password, canvas_url, browser)
