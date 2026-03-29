@@ -13,7 +13,7 @@ import read_data
 import parse_site
 import notifications
 import config
-from log import log, verbose, set_log_timezone
+from log import log, verbose, set_log_timezone, log_exception
 
 load_dotenv()
 
@@ -264,8 +264,12 @@ log(f"Starting: username={username} canvas_url={canvas_url} data_dir={data_dir}"
 try:
     page, browser = sign_in.sign_in(username, password, canvas_url, browser)
 except Exception as e1:
-    log(f"[ERROR] Error during initial sign in: {e1}")
-    discord.send_error_notification(str(e1), error_type="signin_failure")
+    log_exception("[ERROR] Error during initial sign in", e1)
+    discord.send_error_notification(
+        str(e1),
+        error_type="signin_failure",
+        details={"exception": repr(e1)},
+    )
     try:
         browser.close()
     except Exception:
@@ -278,15 +282,22 @@ try:
         try:
             run_checks(page)
         except Exception as e:
-            log(f"[ERROR] Error during check: {e}")
+            log_exception("[ERROR] Error during check", e)
             log("Attempting to re-sign in...")
             try:
                 page, browser = sign_in.sign_in(username, password, canvas_url, browser)
                 run_checks(page)
             except Exception as e2:
-                log(f"[ERROR] Re-sign in failed: {e2}")
-                discord.send_error_notification(str(e2), error_type="signin_failure")
-                time.sleep(200)
+                log_exception("[ERROR] Re-sign in failed", e2)
+                discord.send_error_notification(
+                    str(e2),
+                    error_type="signin_failure",
+                    details={"exception": repr(e2)},
+                )
+                time.sleep(3 * 60 * 60)
+                browser.close()
+                exit(1) # we are unrecoverable, so exit for the script to restart
+
 
         sleep_secs = get_sleep_seconds()
         log(f"Sleeping {sleep_secs / 60:.1f} minutes...")

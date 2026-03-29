@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+import traceback
 from datetime import datetime, tzinfo
 from pathlib import Path
 
@@ -42,4 +43,14 @@ def verbose(msg: str) -> None:
     stamped = f"{_timestamp()}  {msg}"
     with VERBOSE_LOG_FILE.open("a", encoding="utf-8") as fh:
         fh.write(stamped + "\n")
+
+
+def format_exception(exc: BaseException) -> str:
+    return "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+
+
+def log_exception(prefix: str, exc: BaseException) -> None:
+    """Log a short error line to stdout plus full traceback to verbose log."""
+    log(f"{prefix}: {exc!r}")
+    verbose(f"{prefix}: {exc!r}\n{format_exception(exc)}")
 

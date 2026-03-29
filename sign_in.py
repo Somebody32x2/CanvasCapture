@@ -2,7 +2,7 @@ import time
 
 from dotenv import load_dotenv
 from camoufox.sync_api import Camoufox
-from log import log, verbose
+from log import log, verbose, log_exception
 
 load_dotenv()
 
@@ -13,9 +13,14 @@ _SIGN_IN_RETRY_WAIT = 5 * 60  # seconds between full sign-in retries
 
 def _is_browser_closed(browser):
     """Check if the browser instance is closed."""
+    if browser is None:
+        return True
     try:
-        # Try to access a property that would fail if browser is closed
-        _ = browser.is_closed() if hasattr(browser, 'is_closed') else False
+        # Playwright Browser exposes is_closed(); some wrappers expose is_connected()
+        if hasattr(browser, "is_closed"):
+            return bool(browser.is_closed())
+        if hasattr(browser, "is_connected"):
+            return not bool(browser.is_connected())
         return False
     except Exception:
         return True
@@ -33,7 +38,7 @@ def _create_new_browser():
         browser = camoufox_wrapper.__enter__()
         return browser
     except Exception as exc:
-        log(f"[ERROR] Failed to create new browser: {exc}")
+        log_exception("[ERROR] Failed to create new browser", exc)
         raise
 
 
@@ -112,6 +117,6 @@ def sign_in(username, password, url, browser):
         except Exception as exc:
             if attempt == _SIGN_IN_RETRIES:
                 raise
-            log(f"[ERROR] Sign-in attempt {attempt + 1} failed: {exc}")
+            log_exception(f"[ERROR] Sign-in attempt {attempt + 1} failed", exc)
             log(f"  Retrying in {_SIGN_IN_RETRY_WAIT // 60} minutes... ({attempt + 1}/{_SIGN_IN_RETRIES})")
             time.sleep(_SIGN_IN_RETRY_WAIT)
