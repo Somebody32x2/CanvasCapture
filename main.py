@@ -6,6 +6,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from camoufox.sync_api import Camoufox
+from platformdirs import user_data_dir
 
 import discord
 import sign_in
@@ -258,7 +259,7 @@ def run_checks(page):
 
 
 
-camoufox_wrapper = Camoufox(headless=headless)
+camoufox_wrapper = Camoufox(headless=headless, user_data_dir=Path(data_dir) / "camoufox_data")
 browser = camoufox_wrapper.__enter__()
 log(f"Starting: username={username} canvas_url={canvas_url} data_dir={data_dir}")
 try:
