@@ -18,6 +18,7 @@ _COLOR = {
     "assignment_opened":    0x5865F2,  # blurple
     "assignment_closed":    0x99AAB5,  # grey
     "new_announcement":     0x5865F2,  # blurple
+    "due_date_reminder":    0xF0B132,  # amber
 }
 _DEFAULT_COLOR = 0x5DADE2  # light blue
 
@@ -127,6 +128,42 @@ def send_announcement_notifications(
             "description": content,
             "color": _color_for("new_announcement"),
             "footer": {"text": " | ".join(footer_parts)},
+        }
+        _send_message(embed, webhook_url=webhook_url)
+
+
+def send_deadline_reminder_notifications(
+    course_id: str,
+    reminders: list[dict],
+    *,
+    webhook_url: str | None = None,
+) -> None:
+    """
+    Post one embed per deadline reminder.
+
+    Each *reminders* item may include:
+    - title: assignment title
+    - offset_seconds: configured offset in seconds (shown in footer)
+    - offset_label: human-readable offset (e.g. "1 week")
+    - due_date_display: formatted due datetime string
+    - assignment_url: link to the assignment (optional)
+    """
+    for r in reminders:
+        title = r.get("title") or "Assignment"
+        lines = [
+            r.get("offset_label", ""),
+            f"Due: {r.get('due_date_display', '?')}",
+        ]
+        url = r.get("assignment_url")
+        if url:
+            lines.append(url)
+        embed = {
+            "title": f"Deadline Reminder: {title}",
+            "description": "\n".join(lines),
+            "color": _color_for("due_date_reminder"),
+            "footer": {
+                "text": f"Course {course_id} · {r.get('offset_seconds', '')}s before due",
+            },
         }
         _send_message(embed, webhook_url=webhook_url)
 

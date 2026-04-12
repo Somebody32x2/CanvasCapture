@@ -1,3 +1,5 @@
+import re
+
 from dateutil import parser as dateutil_parser
 from dateutil.parser import ParserError
 
@@ -39,6 +41,32 @@ def parse_score(row) -> dict:
             max_points = None
         return {"score": score, "max_points": max_points}
     return {"score": None, "max_points": None}
+
+
+def infer_submission_status(row, score_info: dict) -> bool | None:
+    """
+    Best-effort: True if Canvas shows a submission/grade, False if clearly not submitted,
+    None if unknown (deadline reminders are skipped when unknown).
+    """
+    text = row.inner_text()
+    low = text.lower()
+
+    if re.search(r"\bnot\s+submitted\b", low):
+        return False
+
+    if score_info.get("score") is not None:
+        return True
+
+    if "not yet graded" in low and "-/" in text:
+        return True
+
+    if re.search(r"\d+\s*/\s*\d+\s*pts", text) and re.search(r"\bgraded\b", low):
+        return True
+
+    if re.search(r"\bsubmitted\b", low) and "not submitted" not in low:
+        return True
+
+    return None
 
 
 def parse_assignment_row(row) -> dict | None:
@@ -88,6 +116,7 @@ def parse_assignment_row(row) -> dict | None:
                 close_date = None
 
         score_info = parse_score(row)
+        submitted = infer_submission_status(row, score_info)
 
         return {
             "id": assignment_id,
@@ -98,6 +127,7 @@ def parse_assignment_row(row) -> dict | None:
             "closed": closed,
             "score": score_info["score"],
             "max_points": score_info["max_points"],
+            "submitted": submitted,
         }
 
     except Exception as e:

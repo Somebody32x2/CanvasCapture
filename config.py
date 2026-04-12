@@ -49,6 +49,7 @@ DEFAULT_NOTIFICATION_OVERRIDES: dict[str, dict[str, bool]] = {
         "close_date_removed":   False,
         "assignment_opened":    False,
         "assignment_closed":    False,
+        "due_date_reminder":    True,
     },
     "announcements": {
         "new_announcement":     True,
@@ -71,6 +72,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "check_interval_minutes": 30,
     "headless": True,
     "timezone": "America/New_York",
+    # Seconds before due date to send a Discord reminder (only if still not submitted).
+    # Example: 604800 = 7 days, 86400 = 1 day, 3600 = 1 hour. Empty list disables reminders.
+    "due_reminder_offsets_seconds": [86400, 3600],
     "notifications": build_default_notifications(),
     "night_mode": {
         "enabled": True,

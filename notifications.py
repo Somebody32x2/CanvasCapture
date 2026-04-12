@@ -30,6 +30,8 @@ LABELS: dict[str, dict[str, str]] = {
 
             "assignment_opened": "{new_title} is now open",  # was "not available until", now past/gone
             "assignment_closed": "{new_title} is now closed",  # now past close_date
+
+            "due_date_reminder": "Reminder: {new_title} - {offset_label} before due ({new_due_date})",
         },
         "announcements": {
             "new_announcement": "New announcement: {new_title}",

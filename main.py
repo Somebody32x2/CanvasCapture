@@ -2,6 +2,8 @@ import os
 import json
 import time
 from datetime import datetime, timedelta
+
+from dateutil import parser as du_parser
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -41,6 +43,177 @@ except ValueError as exc:
     tz = config.parse_timezone(fallback_tz_name)
 
 set_log_timezone(tz)
+
+
+def _humanize_seconds_before_due(offset_s: int) -> str:
+    """Short label for Discord, e.g. '1 week', '1 day 3 hours'."""
+    sec = int(offset_s)
+    if sec <= 0:
+        return f"{offset_s}s"
+    remainder = sec
+    parts: list[str] = []
+    for name, unit in (
+        ("week", 604800),
+        ("day", 86400),
+        ("hour", 3600),
+        ("minute", 60),
+    ):
+        if remainder >= unit:
+            n, remainder = divmod(remainder, unit)
+            if n:
+                parts.append(f"{n} {name}{'s' if n != 1 else ''}")
+    if remainder:
+        parts.append(f"{remainder} second{'s' if remainder != 1 else ''}")
+    if not parts:
+        return f"{offset_s} second{'s' if offset_s != 1 else ''}"
+    return " ".join(parts)
+
+
+def _assignment_score_percent(a: dict) -> float | None:
+    """
+    Best-effort percentage 0–100: score/max_points*100 when both exist,
+    else raw score if no max_points (treat as already a percent-like value).
+    """
+    score = a.get("score")
+    if score is None:
+        return None
+    try:
+        s = float(score)
+    except (TypeError, ValueError):
+        return None
+    max_p = a.get("max_points")
+    if max_p is not None:
+        try:
+            mp = float(max_p)
+            if mp > 0:
+                return (s / mp) * 100.0
+        except (TypeError, ValueError):
+            pass
+    return s
+
+
+def _should_send_deadline_reminder(a: dict) -> bool:
+    """
+    Prefer false negatives over false positives: remind if we are unsure,
+    if there is no submission, or if the grade is below 75%.
+    """
+    pct = _assignment_score_percent(a)
+    if pct is not None and pct < 75:
+        return True
+    submitted = a.get("submitted")
+    if submitted is None:
+        return True
+    if submitted is False:
+        return True
+    return False
+
+
+def _maybe_send_due_reminders(course: dict, course_id: str, assignments: list[dict]) -> None:
+    """
+    Send Discord reminders when now >= due_date - offset for each configured offset,
+    if the assignment may still need attention: unknown submission status, not submitted,
+    or score below 75% (as percent of max points when available).
+    """
+    raw_offsets = cfg.get("due_reminder_offsets_seconds") or []
+    if not raw_offsets:
+        return
+    if enabled_assignment_notifs is not None and not enabled_assignment_notifs.get(
+        "due_date_reminder", True
+    ):
+        return
+
+    try:
+        offsets = sorted({int(x) for x in raw_offsets if int(x) > 0})
+    except (TypeError, ValueError):
+        log(
+            "[ERROR] config 'due_reminder_offsets_seconds' must be a list of positive integers (seconds)."
+        )
+        return
+
+    sent_map: dict = course.setdefault("due_reminder_sent", {})
+    valid_ids = {str(a.get("id")) for a in assignments if a.get("id") is not None}
+    for key in list(sent_map.keys()):
+        if str(key) not in valid_ids:
+            del sent_map[key]
+
+    now = datetime.now(tz)
+    reminders_out: list[dict] = []
+
+    for a in assignments:
+        aid = a.get("id")
+        if aid is None:
+            continue
+        aid_str = str(aid)
+
+        if a.get("closed"):
+            continue
+        if not _should_send_deadline_reminder(a):
+            continue
+
+        due_iso = a.get("due_date")
+        if not due_iso:
+            continue
+
+        try:
+            due_dt = du_parser.parse(due_iso)
+        except (TypeError, ValueError) as exc:
+            verbose(f"due reminder: skip assignment {aid_str}, bad due_date {due_iso!r}: {exc}")
+            continue
+
+        if due_dt.tzinfo is None:
+            due_dt = due_dt.replace(tzinfo=tz)
+        else:
+            due_dt = due_dt.astimezone(tz)
+
+        if now >= due_dt:
+            continue
+
+        prev = sent_map.get(aid_str, sent_map.get(aid, []))
+        if not isinstance(prev, list):
+            prev = []
+        already_sent: set[int] = set()
+        for x in prev:
+            try:
+                already_sent.add(int(x))
+            except (TypeError, ValueError):
+                continue
+
+        new_offsets: list[int] = []
+        for off in offsets:
+            if off in already_sent:
+                continue
+            remind_at = due_dt - timedelta(seconds=off)
+            if now >= remind_at:
+                new_offsets.append(off)
+
+        if not new_offsets:
+            continue
+
+        title = a.get("title") or f"Assignment {aid_str}"
+        due_display = due_dt.strftime("%Y-%m-%d %H:%M %Z")
+        base_url = (canvas_url or "").rstrip("/")
+        assignment_url = (
+            f"{base_url}/courses/{course_id}/assignments/{aid_str}" if base_url else ""
+        )
+
+        for off in new_offsets:
+            label = _humanize_seconds_before_due(off)
+            reminders_out.append(
+                {
+                    "title": title,
+                    "offset_seconds": off,
+                    "offset_label": f"{label} before due",
+                    "due_date_display": due_display,
+                    "assignment_url": assignment_url,
+                }
+            )
+            already_sent.add(off)
+            log(f"  [due reminder] {title!r} — {label} before due ({off}s)")
+
+        sent_map[aid_str] = sorted(already_sent)
+
+    if reminders_out:
+        discord.send_deadline_reminder_notifications(course_id, reminders_out)
 
 
 def is_night_time(night_cfg: dict) -> bool:
@@ -192,6 +365,8 @@ def _check_and_notify_assignments(course, course_id, page, data):
             ),
         )
         discord.send_course_notifications(course_id, sorted_enabled)
+
+    _maybe_send_due_reminders(course, course_id, new_list)
 
     course["assignments"] = new_list
 
